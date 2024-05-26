@@ -7,10 +7,11 @@ const jwt = require('jsonwebtoken');
 
 
 const authenticateToken = (req, res, next) => {
-  const token = req.headers['authorization'];
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
   if (token == null) return res.sendStatus(401);
   console.log('Valor de JWT_SECRET en el primer archivo:', JWT_SECRET);
-  jwt.verify(token, JWT_SECRET, (err, user) => { 
+  jwt.verify(token, JWT_SECRET, (err, user) => {  
     if (err) {
       if (err.name === 'JsonWebTokenError') {
         console.error('Token inválido:', err);

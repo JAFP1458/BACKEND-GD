@@ -1,5 +1,6 @@
 require('reflect-metadata');
 const express = require('express');
+const cors = require('cors');  // Importa el middleware de cors
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const documentsRoutes = require('./src/routes/documentsRoutes.js');
@@ -8,7 +9,10 @@ const roles = require('./src/routes/roles.js');
 const users = require('./src/routes/users.js');
 
 const app = express();
-const port = 3000;
+const port = 5000;
+
+// Middleware para habilitar CORS
+app.use(cors());  // Agrega esta línea
 
 // Middleware para analizar solicitudes con cuerpo en formato JSON
 app.use(express.json());

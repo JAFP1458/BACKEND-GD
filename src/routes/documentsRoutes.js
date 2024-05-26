@@ -202,7 +202,7 @@ router.post('/', authenticateToken, authorizeRole('Operador'), upload.single('fi
 
 // Ruta para obtener (descargar) un documento
 // Ruta para obtener (descargar) un documento
-router.get('/descargar', authenticateToken, authorizeRole('Operador'), downloadDocument); // Tanto Visualizadores como Operadores pueden descargar documentos
+router.post('/descargar', authenticateToken, authorizeRole('Operador'), downloadDocument); // Tanto Visualizadores como Operadores pueden descargar documentos
 
 
 // Ruta para obtener la lista de documentos
