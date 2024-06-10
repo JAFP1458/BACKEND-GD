@@ -8,47 +8,8 @@ const sanitize = require('sanitize-html');
 const { validationResult } = require('express-validator');
 const db = require('../../config/db');
 
-/**
- * @swagger
- * tags:
- *   name: Autenticación Usuario
- *   description: Endpoints relacionados con la autenticación de usuarios
- */
 
-// Controlador para registrar un nuevo usuario
-/**
- * @swagger
- * /register:
- *   post:
- *     summary: Registrar un nuevo usuario
- *     description: Crea un nuevo usuario en el sistema.
- *     tags: [Usuarios rutas]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               nombre:
- *                 type: string
- *               correoElectronico:
- *                 type: string
- *               contraseña:
- *                 type: string
- *             required:
- *               - nombre
- *               - correoElectronico
- *               - contraseña
- *     responses:
- *       201:
- *         description: Usuario registrado correctamente
- *       400:
- *         description: Error de validación o usuario ya existente
- *       500:
- *         description: Error del servidor
- */
-
+// Controlador para registrar un nuevo usuario y asignar un rol
 exports.registerUser = async (req, res) => {
     // Validación de los datos de entrada
     const errors = validationResult(req);
@@ -56,7 +17,7 @@ exports.registerUser = async (req, res) => {
         return res.status(400).json({ errors: errors.array() });
     }
 
-    const { nombre, correoElectronico, contraseña } = req.body;
+    const { nombre, correoElectronico, contraseña, rolID } = req.body;
 
     try {
         // Verificar si el usuario ya existe
@@ -76,11 +37,20 @@ exports.registerUser = async (req, res) => {
             RETURNING UsuarioID;
         `;
         const values = [nombre, correoElectronico, hashedPassword];
-        usuario = await db.query(insertQuery, values);
+        const result = await db.query(insertQuery, values);
+
+        const usuarioID = result[0].usuarioid;
+
+        // Asignar el rol al usuario
+        const assignRoleQuery = `
+            INSERT INTO AsignacionesRolesUsuarios (UsuarioID, RolID)
+            VALUES ($1, $2);
+        `;
+        await db.query(assignRoleQuery, [usuarioID, rolID]);
 
         // Generar y devolver el token de sesión
-        const token = generateToken(usuario.UsuarioID);
-        res.status(201).json({ token });
+        const token = generateToken(usuarioID);
+        res.status(201).json({ usuarioID, token });
     } catch (error) {
         console.error('Error al registrar el usuario:', error);
         res.status(500).json({ message: 'Error del servidor' });
@@ -88,34 +58,7 @@ exports.registerUser = async (req, res) => {
 };
 
 // Controlador para iniciar sesión
-/**
- * @swagger
- * /login:
- *   post:
- *     summary: Iniciar sesión
- *     description: Inicia sesión con las credenciales proporcionadas y devuelve un token de sesión.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               correoElectronico:
- *                 type: string
- *               contraseña:
- *                 type: string
- *             required:
- *               - correoElectronico
- *               - contraseña
- *     responses:
- *       200:
- *         description: Sesión iniciada correctamente
- *       400:
- *         description: Credenciales inválidas o usuario sin rol asignado
- *       500:
- *         description: Error del servidor
- */
+
 exports.loginUser = async (req, res) => {
     // Validación de los datos de entrada
     const errors = validationResult(req);
@@ -133,7 +76,6 @@ exports.loginUser = async (req, res) => {
         console.log('Correo electrónico:', sanitizedEmail); // Agrega este registro
         const usuarioResult = await db.query('SELECT * FROM Usuarios WHERE CorreoElectronico = $1', [sanitizedEmail]);
         console.log('Correo electrónico:', sanitizedEmail);
-        
 
         if (!usuarioResult || !usuarioResult.length || !usuarioResult[0]) {
             return res.status(400).json({ message: 'Credenciales inválidas' });
@@ -147,9 +89,11 @@ exports.loginUser = async (req, res) => {
         }
         console.log('Contrasena:', contraseña); 
         console.log('Contrasena:', usuario.contraseña); 
+
         // Verificar la contraseña
-        const isMatch = bcrypt.compare(contraseña,usuario.contraseña);
+        const isMatch = await bcrypt.compare(contraseña, usuario.contraseña); 
         console.log('Contrasena:', isMatch);
+
         if (!isMatch) {
             return res.status(400).json({ message: 'Credenciales inválidas' });
         }
@@ -168,7 +112,7 @@ exports.loginUser = async (req, res) => {
         }
 
         const role = roleResult[0];
-        console.log('Rol:', role.nombrerol); 
+        console.log('Rol:', role.nombrerol);
 
         req.user = {
             id: usuario.usuarioid,
@@ -186,24 +130,10 @@ exports.loginUser = async (req, res) => {
 // Función para generar el token de sesión con el rol del usuario
 function generateToken(usuarioID, userRole) {
     console.log('Valor de JWT_SECRET en el primer archivo:', JWT_SECRET);
-    return jwt.sign({ usuarioID, userRole },JWT_SECRET, { expiresIn: '8h' });
+    return jwt.sign({ usuarioID, userRole }, JWT_SECRET, { expiresIn: '8h' });
 }
 
 
-
-// Controlador para obtener todos los usuarios
-/**
- * @swagger
- * /users:
- *   get:
- *     summary: Obtener todos los usuarios
- *     description: Obtiene una lista de todos los usuarios registrados en el sistema.
- *     responses:
- *       200:
- *         description: Lista de usuarios obtenida correctamente
- *       500:
- *         description: Error del servidor
- */
 exports.getAllUsers = async (req, res) => {
     try {
         const users = await db.query('SELECT * FROM Usuarios');
@@ -215,28 +145,6 @@ exports.getAllUsers = async (req, res) => {
 };
 
 
-// Controlador para mostrar un usuario por su correo electrónico
-/**
- * @swagger
- * /user/{correoElectronico}:
- *   get:
- *     summary: Obtener usuario por correo electrónico
- *     description: Obtiene la información de un usuario registrado en el sistema por su dirección de correo electrónico.
- *     parameters:
- *       - in: path
- *         name: correoElectronico
- *         required: true
- *         description: Dirección de correo electrónico del usuario a buscar
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Usuario encontrado correctamente
- *       404:
- *         description: Usuario no encontrado
- *       500:
- *         description: Error del servidor
- */
 exports.getUserByEmail = async (req, res) => {
     const { correoElectronico } = req.params;
 
@@ -255,79 +163,53 @@ exports.getUserByEmail = async (req, res) => {
 };
 
 
-// Controlador para actualizar la información de un usuario
-/**
- * @swagger
- * /users/{usuarioID}:
- *   put:
- *     summary: Actualizar información de usuario
- *     description: Actualiza la información de un usuario existente en el sistema.
- *     parameters:
- *       - in: path
- *         name: usuarioID
- *         required: true
- *         description: ID del usuario a actualizar
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               nombre:
- *                 type: string
- *               correoElectronico:
- *                 type: string
- *             required:
- *               - nombre
- *               - correoElectronico
- *     responses:
- *       200:
- *         description: Información de usuario actualizada correctamente
- *       400:
- *         description: Error de validación o usuario no encontrado
- *       500:
- *         description: Error del servidor
- *   delete:
- *     summary: Eliminar usuario
- *     description: Elimina un usuario existente en el sistema.
- *     parameters:
- *       - in: path
- *         name: usuarioID
- *         required: true
- *         description: ID del usuario a eliminar
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Usuario eliminado correctamente
- *       404:
- *         description: Usuario no encontrado
- *       500:
- *         description: Error del servidor
- */
+
 exports.updateUser = async (req, res) => {
-    const { usuarioID } = req.params;
-    const { nombre, correoElectronico } = req.body;
+  const { usuarioID } = req.params;
+  const { nombre, correoElectronico, contraseña, rolID } = req.body;
 
-    try {
-        // Verificar si el usuario existe
-        const usuario = await db.query('SELECT * FROM Usuarios WHERE UsuarioID = $1', [usuarioID]);
-        if (usuario.length === 0) {
-            return res.status(404).json({ message: 'El usuario no existe' });
-        }
-
-        // Actualizar la información del usuario
-        await db.query('UPDATE Usuarios SET Nombre = $1, CorreoElectronico = $2 WHERE UsuarioID = $3', [nombre, correoElectronico, usuarioID]);
-
-        res.status(200).json({ message: 'Información del usuario actualizada correctamente' });
-    } catch (error) {
-        console.error('Error al actualizar la información del usuario:', error);
-        res.status(500).json({ message: 'Error del servidor' });
+  try {
+    // Verificar si el usuario existe
+    const usuario = await db.query('SELECT * FROM Usuarios WHERE UsuarioID = $1', [usuarioID]);
+    if (usuario.length === 0) {
+      return res.status(404).json({ message: 'El usuario no existe' });
     }
+
+    // Preparar la consulta de actualización
+    let updateQuery = 'UPDATE Usuarios SET Nombre = $1, CorreoElectronico = $2';
+    const values = [nombre, correoElectronico];
+
+    // Si se proporciona una nueva contraseña, encriptarla y actualizarla
+    if (contraseña) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(contraseña, salt);
+      updateQuery += ', Contraseña = $3';
+      values.push(hashedPassword);
+    }
+
+    updateQuery += ' WHERE UsuarioID = $' + (values.length + 1);
+    values.push(usuarioID);
+
+    // Actualizar la información del usuario
+    await db.query(updateQuery, values);
+
+    // Verificar y actualizar el rol del usuario si ha cambiado
+    if (rolID) {
+      const currentRole = await db.query('SELECT RolID FROM AsignacionesRolesUsuarios WHERE UsuarioID = $1', [usuarioID]);
+      if (currentRole.length === 0 || currentRole[0].rolid !== rolID) {
+        await db.query('DELETE FROM AsignacionesRolesUsuarios WHERE UsuarioID = $1', [usuarioID]);
+        await db.query('INSERT INTO AsignacionesRolesUsuarios (UsuarioID, RolID) VALUES ($1, $2)', [usuarioID, rolID]);
+      }
+    }
+
+    res.status(200).json({ message: 'Información del usuario actualizada correctamente' });
+  } catch (error) {
+    console.error('Error al actualizar la información del usuario:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
 };
+
+
 
 // Controlador para eliminar un usuario
 exports.deleteUser = async (req, res) => {
@@ -349,3 +231,28 @@ exports.deleteUser = async (req, res) => {
         res.status(500).json({ message: 'Error del servidor' });
     }
 };
+
+
+exports.getUserDetails = async (req, res) => {
+  const { usuarioID } = req.params;
+
+  try {
+    // Obtener los detalles del usuario
+    const usuarioResult = await db.query('SELECT * FROM Usuarios WHERE UsuarioID = $1', [usuarioID]);
+    if (usuarioResult.length === 0) {
+      return res.status(404).json({ message: 'El usuario no existe' });
+    }
+
+    const usuario = usuarioResult[0];
+
+    // Obtener el rol del usuario
+    const rolResult = await db.query('SELECT RolID FROM AsignacionesRolesUsuarios WHERE UsuarioID = $1', [usuarioID]);
+    const rolID = rolResult.length > 0 ? rolResult[0].rolid : null;
+
+    res.status(200).json({ ...usuario, rolid: rolID });
+  } catch (error) {
+    console.error('Error al obtener los detalles del usuario:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+

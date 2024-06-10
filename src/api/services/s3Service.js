@@ -75,12 +75,10 @@ async function downloadDocumentFromS3(fileUrl) {
 
 async function deleteDocumentFromS3(url) {
   try {
-
     const fileName = url.split('/').pop();
     const params = {
       Bucket: AWS_BUCKET_NAME,
       Key: fileName,
-
     };
 
     const result = await s3.deleteObject(params).promise();

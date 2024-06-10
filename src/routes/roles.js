@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
 const { authenticateToken, authorizeRole } = require('../api/middleware/authMiddleware');
-const { assignUserRole, createRole, deleteRole } = require('../api/controllers/rolController');
+const { assignUserRole, createRole, deleteRole,getAllRoles, getAllAsignaciones, updateUserAndRole,deleteUserAndRole  } = require('../api/controllers/rolController');
 
 
 
@@ -30,6 +30,23 @@ router.post('/create-role', [
 router.delete('/delete-role/:rolID', [
     param('rolID').notEmpty().withMessage('Se requiere un ID de rol')
 ], deleteRole);
+
+// Ruta para obtener todos los roles
+router.get('/', getAllRoles);
+
+// Ruta para obtener todas las asignaciones
+router.get('/asignaciones', getAllAsignaciones);
+
+router.put('/update/:usuarioID', [
+    param('usuarioID').notEmpty().withMessage('Se requiere el ID de usuario'),
+    body('nombre').notEmpty().withMessage('Se requiere el nombre'),
+    body('correoElectronico').isEmail().withMessage('Se requiere un correo electrónico válido'),
+    body('rolID').notEmpty().withMessage('Se requiere el rol')
+], updateUserAndRole);
+
+router.delete('/delete/:usuarioID', [
+    param('usuarioID').notEmpty().withMessage('Se requiere el ID de usuario')
+], deleteUserAndRole);
 
 
 /**

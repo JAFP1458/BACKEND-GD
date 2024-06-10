@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
-const { addDocument, downloadDocument, getDocumentList, deleteDocument, getDocumentById, updateDocument } = require('../api/controllers/documentsController');
+const { addDocument, downloadDocument, getDocumentList, deleteDocument, getDocumentById, updateDocument, shareDocument, getAuditLogs } = require('../api/controllers/documentsController');
 
 /**
  * @swagger
@@ -189,6 +189,46 @@ const { addDocument, downloadDocument, getDocumentList, deleteDocument, getDocum
  *       '500':
  *         description: Error del servidor.
  */
+/**
+ * @swagger
+ * /documents/share:
+ *   post:
+ *     summary: Compartir un documento.
+ *     description: Permite a los operadores compartir un documento con otros usuarios.
+ *     tags: [Documentos]
+ *     parameters:
+ *       - in: body
+ *         name: share
+ *         description: Datos del documento a compartir.
+ *         required: true
+ *         schema:
+ *           type: object
+ *           properties:
+ *             documentId:
+ *               type: integer
+ *             recipientUserId:
+ *               type: integer
+ *             permissions:
+ *               type: string
+ *     responses:
+ *       '201':
+ *         description: Documento compartido correctamente.
+ *       '500':
+ *         description: Error del servidor.
+ */
+/**
+ * @swagger
+ * /audit:
+ *   get:
+ *     summary: Obtener el historial de acciones.
+ *     description: Permite a los operadores obtener el historial de acciones sobre los documentos.
+ *     tags: [Documentos]
+ *     responses:
+ *       '200':
+ *         description: Historial de acciones obtenido correctamente.
+ *       '500':
+ *         description: Error del servidor.
+ */
 
 // Importa los middlewares de autorización
 const { authenticateToken, authorizeRole } = require('../api/middleware/authMiddleware');
@@ -220,6 +260,12 @@ router.get('/byId/:documentId', authenticateToken, authorizeRole('Operador'), ge
 
 // Ruta para actualizar un documento
 router.put('/:documentId', authenticateToken, authorizeRole('Operador'), updateDocument); // Solo los Operadores pueden actualizar documentos
+
+// Ruta para compartir un documento
+router.post('/share', authenticateToken, authorizeRole('Operador'), shareDocument); // Los Operadores pueden compartir documentos
+
+// Ruta para obtener el historial de acciones
+router.get('/audit', authenticateToken, authorizeRole('Operador'), getAuditLogs); // Los Operadores pueden obtener el historial de acciones
 
 
 

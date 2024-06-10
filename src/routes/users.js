@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
 const { authenticateToken, authorizeRole } = require('../api/middleware/authMiddleware');
-const { registerUser, loginUser, getAllUsers, updateUser, deleteUser,getUserByEmail } = require('../api/controllers/authController');
+const { registerUser, getAllUsers, updateUser, deleteUser,getUserByEmail, getUserDetails } = require('../api/controllers/authController');
 
 /**
  * @swagger
@@ -50,7 +50,8 @@ const authorizeGestor = authorizeRole("Gestor");
 router.post('/register', [
     body('nombre').notEmpty().withMessage('El nombre es obligatorio'),
     body('correoElectronico').isEmail().withMessage('El correo electrónico no es válido'),
-    body('contraseña').isLength({ min: 6 }).withMessage('La contraseña debe tener al menos 6 caracteres')
+    body('contraseña').isLength({ min: 6 }).withMessage('La contraseña debe tener al menos 6 caracteres'),
+    body('rolID').notEmpty().withMessage('Se requiere el rol')
 ], registerUser);
 
 
@@ -131,9 +132,16 @@ router.get('/:correoElectronico', getUserByEmail);
  *       500:
  *         description: Error del servidor
  */
+
+// Ruta para obtener los detalles del usuario
+router.get('/details/:usuarioID', getUserDetails);
+
+// Ruta para actualizar la información del usuario y su rol
 router.put('/:usuarioID', [
-    body('nombre').optional().notEmpty().withMessage('El nombre es obligatorio'),
-    body('correoElectronico').optional().isEmail().withMessage('El correo electrónico no es válido')
+  body('nombre').optional().notEmpty().withMessage('El nombre es obligatorio'),
+  body('correoElectronico').optional().isEmail().withMessage('El correo electrónico no es válido'),
+  body('contraseña').optional().isLength({ min: 8 }).withMessage('La contraseña debe tener al menos 8 caracteres'),
+  body('rolID').optional().isInt().withMessage('El rolID debe ser un número entero')
 ], updateUser);
 // Controlador para mostrar un usuario por su correo electrónico
 /**
