@@ -92,10 +92,10 @@ exports.downloadDocument = async (req, res) => {
     console.log('Descarga exitosa');
   } catch (error) {
     console.error('Error al obtener el documento:', error);
-    if (error.message === 'Archivo no encontrado') {
+    if (error.message === 'File not found') {
       res.status(404).json({ message: error.message });
     } else {
-      res.status(500).json({ message: 'Error del servidor' });
+      res.status(500).json({ message: 'Server error' });
     }
   }
 };

@@ -1,31 +1,32 @@
 require('dotenv').config();
-const AWS = require('aws-sdk');
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const mimeTypes = require('mime-types');
 const fs = require('fs');
 const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_BUCKET_NAME } = process.env;
 
-AWS.config.update({
-  accessKeyId: AWS_ACCESS_KEY_ID,
-  secretAccessKey: AWS_SECRET_ACCESS_KEY,
-  region: 'us-east-2'
+const s3Client = new S3Client({
+  region: 'us-east-2',
+  credentials: {
+    accessKeyId: AWS_ACCESS_KEY_ID,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY
+  }
 });
-
-const s3 = new AWS.S3();
 
 const getETagFromURL = async (documentUrl) => {
   const bucketName = documentUrl.split('.com/')[1].split('/')[0];
-  const objectKey = documentUrl.split(`${bucketName}/`)[1];
+  const objectKey = decodeURIComponent(documentUrl.split('.com/')[1].split('/').slice(1).join('/'));
 
   const params = {
     Bucket: bucketName,
-    Key: objectKey
+    Key: objectKey,
   };
 
   try {
-    const data = await s3.headObject(params).promise();
+    const command = new GetObjectCommand(params);
+    const data = await s3Client.send(command);
     return data.ETag;
   } catch (err) {
-    console.error('Error al obtener el ETag:', err);
+    console.error('Error retrieving ETag:', err);
     throw err;
   }
 };
@@ -38,37 +39,45 @@ async function uploadDocumentToS3(fileName, fileContent) {
   };
 
   try {
-    const result = await s3.upload(params).promise();
-    return result.Location;
+    const command = new PutObjectCommand(params);
+    const result = await s3Client.send(command);
+    return `https://${AWS_BUCKET_NAME}.s3.amazonaws.com/${fileName}`;
   } catch (error) {
-    console.error('Error al subir el documento a S3:', error);
-    throw error; // Re-lanzar para que el que llama lo maneje
+    console.error('Error uploading document to S3:', error);
+    throw error;
   }
 }
 
 async function downloadDocumentFromS3(fileUrl) {
   try {
-    const bucketName = fileUrl.split('/')[3]; // Obtener el nombre del bucket de la URL
-    const key = decodeURIComponent(fileUrl.split('/').slice(3).join('/')); // Obtener la clave (ruta del objeto) de la URL y decodificar los caracteres especiales
+    const key = decodeURIComponent(fileUrl.split('/').slice(3).join('/'));
 
     const params = {
       Bucket: AWS_BUCKET_NAME,
       Key: key,
     };
 
-    const data = await s3.getObject(params).promise();
+    const command = new GetObjectCommand(params);
+    const data = await s3Client.send(command);
+
+    const chunks = [];
+    for await (const chunk of data.Body) {
+      chunks.push(chunk);
+    }
+
+    const fileBuffer = Buffer.concat(chunks);
     const contentType = data.ContentType || mimeTypes.lookup(key.split('/').pop()) || 'application/octet-stream';
 
     return {
-      data: data.Body,
+      data: fileBuffer,
       contentType,
     };
   } catch (error) {
-    if (error.code === 'NoSuchKey') {
-      throw new Error('Archivo no encontrado');
+    if (error.name === 'NoSuchKey') {
+      throw new Error('File not found');
     } else {
       console.error(error);
-      throw new Error('Error al descargar el archivo de S3');
+      throw new Error('Error downloading file from S3');
     }
   }
 }
@@ -81,15 +90,16 @@ async function deleteDocumentFromS3(url) {
       Key: fileName,
     };
 
-    const result = await s3.deleteObject(params).promise();
-    console.log('Documento eliminado de S3:', result);
+    const command = new DeleteObjectCommand(params);
+    const result = await s3Client.send(command);
+    console.log('Document deleted from S3:', result);
     return true;
   } catch (error) {
-    if (error.code === 'NoSuchKey') {
-      return { error: 'Archivo no encontrado' }; // Objeto de error informativo
+    if (error.name === 'NoSuchKey') {
+      return { error: 'File not found' };
     } else {
-      console.error('Error al eliminar el documento de S3:', error);
-      throw new Error('Eliminación fallida'); // Error más específico
+      console.error('Error deleting document from S3:', error);
+      throw new Error('Failed deletion');
     }
   }
 }
