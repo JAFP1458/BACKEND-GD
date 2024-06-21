@@ -1,7 +1,17 @@
-const express = require('express');
-const multer = require('multer');
+const express = require("express");
+const multer = require("multer");
 const router = express.Router();
-const { addDocument, downloadDocument, getDocumentList, deleteDocument, getDocumentById, updateDocument, shareDocument, getAuditLogs } = require('../api/controllers/documentsController');
+const {
+  addDocument,
+  downloadDocument,
+  getDocuments,
+  deleteDocument,
+  getDocumentById,
+  updateDocument,
+  getDocumentTypes,
+  shareDocument,
+  getAuditLogs,
+} = require("../api/controllers/documentsController");
 
 /**
  * @swagger
@@ -231,42 +241,80 @@ const { addDocument, downloadDocument, getDocumentList, deleteDocument, getDocum
  */
 
 // Importa los middlewares de autorización
-const { authenticateToken, authorizeRole } = require('../api/middleware/authMiddleware');
+const {
+  authenticateToken,
+  authorizeRole,
+} = require("../api/middleware/authMiddleware");
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // Ruta para agregar un nuevo documento
-router.post('/', authenticateToken, authorizeRole('Operador'), upload.single('file'), addDocument); // Los Operadores pueden agregar documentos
-
+router.post(
+  "/",
+  authenticateToken,
+  authorizeRole("Operador"),
+  upload.single("file"),
+  addDocument
+); // Los Operadores pueden agregar documentos
 
 // Ruta para obtener (descargar) un documento
 // Ruta para obtener (descargar) un documento
-router.post('/descargar', authenticateToken, authorizeRole('Operador'), downloadDocument); // Tanto Visualizadores como Operadores pueden descargar documentos
-
+router.post(
+  "/descargar",
+  authenticateToken,
+  authorizeRole("Operador"),
+  downloadDocument
+); // Tanto Visualizadores como Operadores pueden descargar documentos
 
 // Ruta para obtener la lista de documentos
-router.get('/', authenticateToken, authorizeRole('Operador'), getDocumentList); // Tanto Visualizadores como Operadores pueden obtener la lista de documentos
-
+router.get("/", authenticateToken, authorizeRole("Operador"), getDocuments); // Tanto Visualizadores como Operadores pueden obtener la lista de documentos
 
 // Ruta para eliminar un documento
-router.delete('/borrar', authenticateToken, authorizeRole('Operador'), deleteDocument); // Solo los Operadores pueden eliminar documentos
+router.delete(
+  "/borrar",
+  authenticateToken,
+  authorizeRole("Operador"),
+  deleteDocument
+); // Solo los Operadores pueden eliminar documentos
 
-
+router.get(
+  "/types",
+  authenticateToken,
+  authorizeRole("Operador"),
+  getDocumentTypes
+); // Solo los Operadores pueden eliminar documentos
 
 // Ruta para obtener un documento por su ID
-router.get('/byId/:documentId', authenticateToken, authorizeRole('Operador'), getDocumentById); // Tanto Visualizadores como Operadores pueden obtener un documento por su ID
-
+router.get(
+  "/byId/:documentId",
+  authenticateToken,
+  authorizeRole("Operador"),
+  getDocumentById
+); // Tanto Visualizadores como Operadores pueden obtener un documento por su ID
 
 // Ruta para actualizar un documento
-router.put('/:documentId', authenticateToken, authorizeRole('Operador'), updateDocument); // Solo los Operadores pueden actualizar documentos
+router.put(
+  "/:documentId",
+  authenticateToken,
+  authorizeRole("Operador"),
+  updateDocument
+); // Solo los Operadores pueden actualizar documentos
 
 // Ruta para compartir un documento
-router.post('/share', authenticateToken, authorizeRole('Operador'), shareDocument); // Los Operadores pueden compartir documentos
+router.post(
+  "/share",
+  authenticateToken,
+  authorizeRole("Operador"),
+  shareDocument
+); // Los Operadores pueden compartir documentos
 
 // Ruta para obtener el historial de acciones
-router.get('/audit', authenticateToken, authorizeRole('Operador'), getAuditLogs); // Los Operadores pueden obtener el historial de acciones
-
-
+router.get(
+  "/audit",
+  authenticateToken,
+  authorizeRole("Operador"),
+  getAuditLogs
+); // Los Operadores pueden obtener el historial de acciones
 
 module.exports = router;

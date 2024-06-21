@@ -1,5 +1,9 @@
-const { uploadDocumentToS3, downloadDocumentFromS3, deleteDocumentFromS3 } = require('../services/s3Service');
-const db = require('../../config/db'); // Importa el objeto de conexión a la base de datos PostgreSQL
+const {
+  uploadDocumentToS3,
+  downloadDocumentFromS3,
+  deleteDocumentFromS3,
+} = require("../services/s3Service");
+const db = require("../../config/db"); // Importa el objeto de conexión a la base de datos PostgreSQL
 
 // Función para registrar una acción en la auditoría
 const registrarAccion = async (usuarioId, accion, detalles) => {
@@ -18,11 +22,11 @@ exports.shareDocument = async (req, res) => {
 
   try {
     // Verificar si el documento existe
-    const documentQuery = 'SELECT * FROM Documentos WHERE DocumentoID = $1';
+    const documentQuery = "SELECT * FROM Documentos WHERE DocumentoID = $1";
     const documentResult = await db.query(documentQuery, [documentId]);
 
-    if (documentResult.rows.length === 0) {
-      return res.status(404).json({ message: 'Documento no encontrado' });
+    if (documentResult.length === 0) {
+      return res.status(404).json({ message: "Documento no encontrado" });
     }
 
     // Insertar el registro de compartir documento
@@ -31,15 +35,27 @@ exports.shareDocument = async (req, res) => {
       VALUES ($1, $2, $3, $4, NOW())
       RETURNING *;
     `;
-    const shareResult = await db.query(shareQuery, [documentId, senderUserId, recipientUserId, permissions]);
+    const shareResult = await db.query(shareQuery, [
+      documentId,
+      senderUserId,
+      recipientUserId,
+      permissions,
+    ]);
 
     // Registrar la acción en la auditoría
-    await registrarAccion(senderUserId, 'Compartir Documento', `Documento ${documentId} compartido con el usuario ${recipientUserId} con permisos ${permissions}`);
+    await registrarAccion(
+      senderUserId,
+      "Compartir Documento",
+      `Documento ${documentId} compartido con el usuario ${recipientUserId} con permisos ${permissions}`
+    );
 
-    res.status(201).json({ message: 'Documento compartido correctamente', shareResult: shareResult.rows[0] });
+    res.status(201).json({
+      message: "Documento compartido correctamente",
+      shareResult: shareResult,
+    });
   } catch (error) {
-    console.error('Error al compartir el documento:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error al compartir el documento:", error);
+    res.status(500).json({ message: "Error del servidor" });
   }
 };
 
@@ -62,12 +78,18 @@ exports.addDocument = async (req, res) => {
     const values = [titulo, descripcion, fileUrl, usuarioId, tipoDocumentoId];
     const result = await db.query(insertQuery, values);
 
-    await registrarAccion(usuarioId, 'Agregar Documento', `Documento ${result.rows[0].documentoid} agregado por el usuario ${usuarioId}`);
+    await registrarAccion(
+      usuarioId,
+      "Agregar Documento",
+      `Documento ${result.documentoid} agregado por el usuario ${usuarioId}`
+    );
 
-    res.status(201).json({ message: 'Documento añadido correctamente', fileUrl });
+    res
+      .status(201)
+      .json({ message: "Documento añadido correctamente", fileUrl });
   } catch (error) {
-    console.error('Error adding document:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error adding document:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
@@ -80,62 +102,81 @@ exports.downloadDocument = async (req, res) => {
     const documentData = await downloadDocumentFromS3(documentUrl);
 
     // Registra la descarga en la base de datos
-    await db.query('UPDATE Documentos SET Descargas = Descargas + 1, FechaDescarga = CURRENT_TIMESTAMP WHERE URL = $1', [documentUrl]);
+    await db.query(
+      "UPDATE Documentos SET Descargas = Descargas + 1, FechaDescarga = CURRENT_TIMESTAMP WHERE URL = $1",
+      [documentUrl]
+    );
 
     // Registrar la acción en la auditoría
-    await registrarAccion(usuarioId, 'Descargar Documento', `Documento con URL ${documentUrl} descargado por el usuario ${usuarioId}`);
+    await registrarAccion(
+      usuarioId,
+      "Descargar Documento",
+      `Documento con URL ${documentUrl} descargado por el usuario ${usuarioId}`
+    );
 
     // Establece los encabezados de respuesta y envía el documento
-    res.setHeader('Content-Disposition', `attachment; filename="${decodeURIComponent(documentUrl.split('/').pop())}"`);
-    res.setHeader('Content-Type', documentData.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${decodeURIComponent(
+        documentUrl.split("/").pop()
+      )}"`
+    );
+    res.setHeader("Content-Type", documentData.contentType);
     res.send(documentData.data);
-    console.log('Descarga exitosa');
+    console.log("Descarga exitosa");
   } catch (error) {
-    console.error('Error al obtener el documento:', error);
-    if (error.message === 'File not found') {
+    console.error("Error al obtener el documento:", error);
+    if (error.message === "File not found") {
       res.status(404).json({ message: error.message });
     } else {
-      res.status(500).json({ message: 'Server error' });
+      res.status(500).json({ message: "Server error" });
     }
   }
 };
 
 // Controlador para obtener la lista de documentos con búsqueda avanzada
-exports.getDocumentList = async (req, res) => {
+exports.getDocuments = async (req, res) => {
   try {
-    const { titulo, descripcion, usuarioId, tipoDocumentoId, fechaInicio, fechaFin } = req.query;
+    const { titulo, usuarioId, tipoDocumentoId, fechaInicio, fechaFin } =
+      req.query;
 
-    let query = 'SELECT * FROM Documentos WHERE 1=1';
+    let query = `
+      SELECT 
+        d.*, 
+        u.CorreoElectronico AS UsuarioCorreo,
+        td.Descripcion AS TipoDocumentoNombre
+      FROM Documentos d
+      JOIN Usuarios u ON d.UsuarioID = u.UsuarioID
+      JOIN TiposDocumentos td ON d.TipoDocumentoID = td.TipoDocumentoID
+      WHERE 1=1
+    `;
     const values = [];
 
     if (titulo) {
-      query += ' AND Titulo ILIKE $1';
+      query += ` AND d.Titulo ILIKE $${values.length + 1}`;
       values.push(`%${titulo}%`);
     }
-    if (descripcion) {
-      query += ' AND Descripcion ILIKE $2';
-      values.push(`%${descripcion}%`);
-    }
     if (usuarioId) {
-      query += ' AND UsuarioID = $3';
+      query += ` AND d.UsuarioID = $${values.length + 1}`;
       values.push(usuarioId);
     }
     if (tipoDocumentoId) {
-      query += ' AND TipoDocumentoID = $4';
+      query += ` AND d.TipoDocumentoID = $${values.length + 1}`;
       values.push(tipoDocumentoId);
     }
     if (fechaInicio && fechaFin) {
-      query += ' AND FechaCreacion BETWEEN $5 AND $6';
-      values.push(fechaInicio);
-      values.push(fechaFin);
+      query += ` AND d.FechaCreacion BETWEEN $${values.length + 1} AND $${
+        values.length + 2
+      }`;
+      values.push(fechaInicio, fechaFin);
     }
 
     const result = await db.query(query, values);
 
     res.status(200).json(result);
   } catch (error) {
-    console.error('Error obteniendo la lista de documentos:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error fetching documents:", error);
+    res.status(500).json({ message: "Error fetching documents" });
   }
 };
 
@@ -145,7 +186,7 @@ exports.deleteDocument = async (req, res) => {
   const usuarioId = req.user.usuarioID; // Asumiendo que el usuario está autenticado y su ID está disponible
 
   try {
-    console.log('Documento a eliminar:', documentUrl);
+    console.log("Documento a eliminar:", documentUrl);
 
     const s3Result = await deleteDocumentFromS3(documentUrl);
     if (s3Result.error) {
@@ -160,15 +201,21 @@ exports.deleteDocument = async (req, res) => {
     const result = await db.query(deleteQuery, [documentUrl]);
 
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Documento no encontrado en la base de datos' });
+      return res
+        .status(404)
+        .json({ message: "Documento no encontrado en la base de datos" });
     }
 
-    await registrarAccion(usuarioId, 'Eliminar Documento', `Documento con URL ${documentUrl} eliminado por el usuario ${usuarioId}`);
+    await registrarAccion(
+      usuarioId,
+      "Eliminar Documento",
+      `Documento con URL ${documentUrl} eliminado por el usuario ${usuarioId}`
+    );
 
-    res.status(200).json({ message: 'Documento eliminado correctamente' });
+    res.status(200).json({ message: "Documento eliminado correctamente" });
   } catch (error) {
-    console.error('Error al eliminar el documento:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error al eliminar el documento:", error);
+    res.status(500).json({ message: "Error del servidor" });
   }
 };
 
@@ -185,11 +232,11 @@ exports.getDocumentById = async (req, res) => {
 
     const result = await db.query(query, [documentId]);
 
-    if (!result || result.rows.length === 0) {
-      return res.status(404).json({ message: 'Documento no encontrado' });
+    if (!result || result.length === 0) {
+      return res.status(404).json({ message: "Documento no encontrado" });
     }
 
-    const documento = result.rows[0];
+    const documento = result;
 
     const versionsQuery = `
       SELECT versiondocumentoid, documentoid, url_s3, fechacreacion
@@ -198,12 +245,24 @@ exports.getDocumentById = async (req, res) => {
     `;
 
     const versionsResult = await db.query(versionsQuery, [documentId]);
-    const versionesAnteriores = versionsResult.rows;
+    const versionesAnteriores = versionsResult;
 
     res.status(200).json({ documento, versionesAnteriores });
   } catch (error) {
-    console.error('Error al obtener el documento por ID:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error al obtener el documento por ID:", error);
+    res.status(500).json({ message: "Error del servidor" });
+  }
+};
+
+exports.getDocumentTypes = async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT TipoDocumentoID, Descripcion FROM TiposDocumentos"
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching document types:", error);
+    res.status(500).json({ message: "Error fetching document types" });
   }
 };
 
@@ -225,7 +284,14 @@ exports.updateDocument = async (req, res) => {
       RETURNING *;
     `;
 
-    const updateValues = [titulo, descripcion, updatedFileUrl, usuarioId, tipoDocumentoId, documentId];
+    const updateValues = [
+      titulo,
+      descripcion,
+      updatedFileUrl,
+      usuarioId,
+      tipoDocumentoId,
+      documentId,
+    ];
     const updatedResult = await db.query(updateQuery, updateValues);
 
     const insertVersionQuery = `
@@ -233,15 +299,26 @@ exports.updateDocument = async (req, res) => {
       VALUES ($1, $2, $3, $4);
     `;
 
-    const insertVersionValues = [updatedResult.rows[0].documentoid, documentId, updatedResult.rows[0].url, new Date()];
+    const insertVersionValues = [
+      updatedResult.documentoid,
+      documentId,
+      updatedResult.url,
+      new Date(),
+    ];
     await db.query(insertVersionQuery, insertVersionValues);
 
-    await registrarAccion(usuarioId, 'Actualizar Documento', `Documento ${documentId} actualizado por el usuario ${usuarioId}`);
+    await registrarAccion(
+      usuarioId,
+      "Actualizar Documento",
+      `Documento ${documentId} actualizado por el usuario ${usuarioId}`
+    );
 
-    res.status(200).json({ message: 'Documento actualizado correctamente', updatedFileUrl });
+    res
+      .status(200)
+      .json({ message: "Documento actualizado correctamente", updatedFileUrl });
   } catch (error) {
-    console.error('Error al actualizar el documento:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error al actualizar el documento:", error);
+    res.status(500).json({ message: "Error del servidor" });
   }
 };
 
@@ -260,9 +337,9 @@ exports.getAuditLogs = async (req, res) => {
 
     const result = await db.query(query, values);
 
-    res.status(200).json(result.rows);
+    res.status(200).json(result);
   } catch (error) {
-    console.error('Error al obtener el historial de acciones:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    console.error("Error al obtener el historial de acciones:", error);
+    res.status(500).json({ message: "Error del servidor" });
   }
 };
