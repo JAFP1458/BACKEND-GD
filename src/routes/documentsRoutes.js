@@ -11,6 +11,7 @@ const {
   getDocumentTypes,
   shareDocument,
   getAuditLogs,
+  deleteVersion,
 } = require("../api/controllers/documentsController");
 
 /**
@@ -259,7 +260,6 @@ router.post(
 ); // Los Operadores pueden agregar documentos
 
 // Ruta para obtener (descargar) un documento
-// Ruta para obtener (descargar) un documento
 router.post(
   "/descargar",
   authenticateToken,
@@ -278,13 +278,6 @@ router.delete(
   deleteDocument
 ); // Solo los Operadores pueden eliminar documentos
 
-router.get(
-  "/types",
-  authenticateToken,
-  authorizeRole("Operador"),
-  getDocumentTypes
-); // Solo los Operadores pueden eliminar documentos
-
 // Ruta para obtener un documento por su ID
 router.get(
   "/byId/:documentId",
@@ -298,6 +291,7 @@ router.put(
   "/:documentId",
   authenticateToken,
   authorizeRole("Operador"),
+  upload.single("file"),
   updateDocument
 ); // Solo los Operadores pueden actualizar documentos
 
@@ -309,6 +303,14 @@ router.post(
   shareDocument
 ); // Los Operadores pueden compartir documentos
 
+// Ruta para obtener los tipos de documentos
+router.get(
+  "/types",
+  authenticateToken,
+  authorizeRole("Operador"),
+  getDocumentTypes
+); // Tanto Visualizadores como Operadores pueden obtener los tipos de documentos
+
 // Ruta para obtener el historial de acciones
 router.get(
   "/audit",
@@ -316,5 +318,13 @@ router.get(
   authorizeRole("Operador"),
   getAuditLogs
 ); // Los Operadores pueden obtener el historial de acciones
+
+// Ruta para eliminar una versión de documento
+router.delete(
+  "/versions/:versionId",
+  authenticateToken,
+  authorizeRole("Operador"),
+  deleteVersion
+); // Solo los Operadores pueden eliminar versiones de documentos
 
 module.exports = router;

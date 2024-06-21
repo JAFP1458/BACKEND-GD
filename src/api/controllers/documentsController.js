@@ -3,7 +3,7 @@ const {
   downloadDocumentFromS3,
   deleteDocumentFromS3,
 } = require("../services/s3Service");
-const db = require("../../config/db"); // Importa el objeto de conexión a la base de datos PostgreSQL
+const db = require("../../config/db");
 
 // Función para registrar una acción en la auditoría
 const registrarAccion = async (usuarioId, accion, detalles) => {
@@ -137,7 +137,7 @@ exports.downloadDocument = async (req, res) => {
 // Controlador para obtener la lista de documentos con búsqueda avanzada
 exports.getDocuments = async (req, res) => {
   try {
-    const { titulo, usuarioId, tipoDocumentoId, fechaInicio, fechaFin } =
+    const { titulo, usuarioCorreo, tipoDocumentoId, fechaInicio, fechaFin } =
       req.query;
 
     let query = `
@@ -156,9 +156,9 @@ exports.getDocuments = async (req, res) => {
       query += ` AND d.Titulo ILIKE $${values.length + 1}`;
       values.push(`%${titulo}%`);
     }
-    if (usuarioId) {
-      query += ` AND d.UsuarioID = $${values.length + 1}`;
-      values.push(usuarioId);
+    if (usuarioCorreo) {
+      query += ` AND u.CorreoElectronico ILIKE $${values.length + 1}`;
+      values.push(`%${usuarioCorreo}%`);
     }
     if (tipoDocumentoId) {
       query += ` AND d.TipoDocumentoID = $${values.length + 1}`;
@@ -183,7 +183,7 @@ exports.getDocuments = async (req, res) => {
 // Controlador para eliminar un documento
 exports.deleteDocument = async (req, res) => {
   const { documentUrl } = req.body;
-  const usuarioId = req.user.usuarioID; // Asumiendo que el usuario está autenticado y su ID está disponible
+  const usuarioId = req.user.usuarioID;
 
   try {
     console.log("Documento a eliminar:", documentUrl);
@@ -219,31 +219,38 @@ exports.deleteDocument = async (req, res) => {
   }
 };
 
-// Controlador para obtener un documento por su ID
+// Controlador para obtener un documento por su ID y sus versiones anteriores
 exports.getDocumentById = async (req, res) => {
   const { documentId } = req.params;
 
   try {
     const query = `
-      SELECT * 
-      FROM Documentos 
-      WHERE DocumentoID = $1;
+      SELECT 
+        d.*, 
+        u.CorreoElectronico AS UsuarioCorreo,
+        td.Descripcion AS TipoDocumentoNombre
+      FROM Documentos d
+      JOIN Usuarios u ON d.UsuarioID = u.UsuarioID
+      JOIN TiposDocumentos td ON d.TipoDocumentoID = td.TipoDocumentoID
+      WHERE d.DocumentoID = $1;
     `;
-
     const result = await db.query(query, [documentId]);
 
-    if (!result || result.length === 0) {
+    if (!result.length) {
       return res.status(404).json({ message: "Documento no encontrado" });
     }
 
     const documento = result;
 
     const versionsQuery = `
-      SELECT versiondocumentoid, documentoid, url_s3, fechacreacion
-      FROM VersionesDocumentos
+      SELECT 
+        versiondocumentoid, 
+        documentoid, 
+        url_s3, 
+        fechacreacion 
+      FROM VersionesDocumentos 
       WHERE documentoid = $1;
     `;
-
     const versionsResult = await db.query(versionsQuery, [documentId]);
     const versionesAnteriores = versionsResult;
 
@@ -266,24 +273,33 @@ exports.getDocumentTypes = async (req, res) => {
   }
 };
 
-// Controlador para actualizar un documento
+// Controlador para actualizar un documento y generar una nueva versión
 exports.updateDocument = async (req, res) => {
   const { documentId } = req.params;
-  const usuarioId = req.user.usuarioID; // Asumiendo que el usuario está autenticado y su ID está disponible
+  const usuarioId = req.user.usuarioID;
 
   try {
     const { titulo, descripcion, tipoDocumentoId } = req.body;
     const { originalname, buffer } = req.file;
 
+    // Obtener la URL actual del documento para guardar como versión anterior
+    const currentDocQuery = "SELECT URL FROM Documentos WHERE DocumentoID = $1";
+    const currentDocResult = await db.query(currentDocQuery, [documentId]);
+    if (!currentDocResult.length) {
+      return res.status(404).json({ message: "Documento no encontrado" });
+    }
+    const currentUrl = currentDocResult.url;
+
+    // Subir el nuevo documento a S3
     const updatedFileUrl = await uploadDocumentToS3(originalname, buffer);
 
+    // Actualizar el documento con la nueva URL
     const updateQuery = `
       UPDATE Documentos 
       SET Titulo = $1, Descripcion = $2, URL = $3, FechaModificacion = NOW(), UsuarioID = $4, TipoDocumentoID = $5
       WHERE DocumentoID = $6
       RETURNING *;
     `;
-
     const updateValues = [
       titulo,
       descripcion,
@@ -294,18 +310,12 @@ exports.updateDocument = async (req, res) => {
     ];
     const updatedResult = await db.query(updateQuery, updateValues);
 
+    // Guardar la versión anterior en la tabla de versiones
     const insertVersionQuery = `
-      INSERT INTO VersionesAnteriores (VersionDocumentoID, DocumentoID, URL_S3, FechaCreacion)
-      VALUES ($1, $2, $3, $4);
+      INSERT INTO VersionesDocumentos (DocumentoID, URL_S3, FechaCreacion)
+      VALUES ($1, $2, NOW());
     `;
-
-    const insertVersionValues = [
-      updatedResult.documentoid,
-      documentId,
-      updatedResult.url,
-      new Date(),
-    ];
-    await db.query(insertVersionQuery, insertVersionValues);
+    await db.query(insertVersionQuery, [documentId, currentUrl]);
 
     await registrarAccion(
       usuarioId,
@@ -318,6 +328,53 @@ exports.updateDocument = async (req, res) => {
       .json({ message: "Documento actualizado correctamente", updatedFileUrl });
   } catch (error) {
     console.error("Error al actualizar el documento:", error);
+    res.status(500).json({ message: "Error del servidor" });
+  }
+};
+
+// Controlador para eliminar una versión de documento
+exports.deleteVersion = async (req, res) => {
+  const { versionId } = req.params;
+  const usuarioId = req.user.usuarioID;
+
+  try {
+    // Obtener la URL de la versión para eliminarla de S3
+    const versionQuery =
+      "SELECT URL_S3 FROM VersionesDocumentos WHERE VersionDocumentoID = $1";
+    const versionResult = await db.query(versionQuery, [versionId]);
+    if (!versionResult.length) {
+      return res.status(404).json({ message: "Versión no encontrada" });
+    }
+    const versionUrl = versionResult.url_s3;
+
+    // Eliminar la versión de S3
+    const s3Result = await deleteDocumentFromS3(versionUrl);
+    if (s3Result.error) {
+      return res.status(404).json({ message: s3Result.error });
+    }
+
+    // Eliminar la versión de la base de datos
+    const deleteVersionQuery = `
+      DELETE FROM VersionesDocumentos
+      WHERE VersionDocumentoID = $1
+      RETURNING *;
+    `;
+    const deleteResult = await db.query(deleteVersionQuery, [versionId]);
+    if (deleteResult.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ message: "Versión no encontrada en la base de datos" });
+    }
+
+    await registrarAccion(
+      usuarioId,
+      "Eliminar Versión",
+      `Versión ${versionId} eliminada por el usuario ${usuarioId}`
+    );
+
+    res.status(200).json({ message: "Versión eliminada correctamente" });
+  } catch (error) {
+    console.error("Error al eliminar la versión:", error);
     res.status(500).json({ message: "Error del servidor" });
   }
 };
