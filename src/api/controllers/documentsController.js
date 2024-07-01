@@ -15,6 +15,22 @@ const registrarAccion = async (usuarioId, accion, detalles) => {
   await db.query(query, values);
 };
 
+// Controlador para obtener notificaciones
+exports.getNotifications = async (req, res) => {
+  const usuarioId = req.user.usuarioID;
+
+  try {
+    const notificationsQuery =
+      "SELECT * FROM Notificaciones WHERE UsuarioID = $1 ORDER BY FechaHora DESC";
+    const notificationsResult = await db.query(notificationsQuery, [usuarioId]);
+
+    res.status(200).json(notificationsResult.rows);
+  } catch (error) {
+    console.error("Error al obtener las notificaciones:", error);
+    res.status(500).json({ message: "Error del servidor" });
+  }
+};
+
 // Controlador para compartir un documento
 exports.shareDocument = async (req, res) => {
   const { documentId, recipientUserId, permissions } = req.body;
@@ -49,6 +65,13 @@ exports.shareDocument = async (req, res) => {
       `Documento ${documentId} compartido con el usuario ${recipientUserId} con permisos ${permissions}`
     );
 
+    // Enviar notificación al destinatario
+    await sendNotification(req.io, recipientUserId, {
+      title: "Nuevo Documento Compartido",
+      message: `El usuario ${senderUserId} ha compartido un documento contigo con los permisos ${permissions}.`,
+      documentId: documentId,
+    });
+
     res.status(201).json({
       message: "Documento compartido correctamente",
       shareResult: shareResult,
@@ -57,6 +80,24 @@ exports.shareDocument = async (req, res) => {
     console.error("Error al compartir el documento:", error);
     res.status(500).json({ message: "Error del servidor" });
   }
+};
+
+// Función para enviar notificaciones
+const sendNotification = async (io, userId, notification) => {
+  const notificationQuery = `
+    INSERT INTO Notificaciones (UsuarioID, Titulo, Mensaje, DocumentoID, FechaHora)
+    VALUES ($1, $2, $3, $4, NOW());
+  `;
+  const values = [
+    userId,
+    notification.title,
+    notification.message,
+    notification.documentId,
+  ];
+  await db.query(notificationQuery, values);
+
+  // Emitir notificación a través de Socket.io
+  io.to(userId).emit("notification", notification);
 };
 
 // Controlador para agregar un nuevo documento

@@ -11,6 +11,7 @@ const {
   getDocumentTypes,
   shareDocument,
   getAuditLogs,
+  getNotifications,
   deleteVersion,
 } = require("../api/controllers/documentsController");
 
@@ -277,6 +278,14 @@ router.delete(
   authorizeRole("Operador"),
   deleteDocument
 ); // Solo los Operadores pueden eliminar documentos
+
+// Ruta para obtener notificaciones
+router.get(
+  "/notifications",
+  authenticateToken,
+  authorizeRole("Operador"),
+  getNotifications
+);
 
 // Ruta para obtener un documento por su ID
 router.get(
