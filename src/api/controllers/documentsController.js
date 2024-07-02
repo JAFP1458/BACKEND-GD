@@ -31,6 +31,31 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
+// Controlador para eliminar una notificación
+exports.deleteNotification = async (req, res) => {
+  const { notificationId } = req.params;
+  const usuarioId = req.user.usuarioID;
+
+  try {
+    const deleteQuery = `
+      DELETE FROM Notificaciones
+      WHERE NotificacionID = $1 AND UsuarioID = $2
+      RETURNING *;
+    `;
+    const result = await db.query(deleteQuery, [notificationId, usuarioId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "Notificación no encontrada" });
+    }
+
+    res.status(200).json({ message: "Notificación eliminada correctamente" });
+  } catch (error) {
+    console.error("Error al eliminar la notificación:", error);
+    res.status(500).json({ message: "Error del servidor" });
+  }
+};
+
+
 // Controlador para compartir un documento
 exports.shareDocument = async (req, res) => {
   const { documentId, recipientUserId, permissions } = req.body;
@@ -229,6 +254,13 @@ exports.deleteDocument = async (req, res) => {
   try {
     console.log("Documento a eliminar:", documentUrl);
 
+    // Eliminar las notificaciones relacionadas con el documento
+    const deleteNotificationsQuery = `
+      DELETE FROM Notificaciones
+      WHERE DocumentoID = (SELECT DocumentoID FROM Documentos WHERE URL = $1);
+    `;
+    await db.query(deleteNotificationsQuery, [documentUrl]);
+
     // Eliminar las entradas en DocumentosCompartidos
     const deleteSharedDocsQuery = `
       DELETE FROM DocumentosCompartidos
@@ -268,6 +300,7 @@ exports.deleteDocument = async (req, res) => {
     res.status(500).json({ message: "Error del servidor" });
   }
 };
+
 
 // Controlador para obtener un documento por su ID y sus versiones anteriores
 exports.getDocumentById = async (req, res) => {
@@ -329,7 +362,6 @@ exports.updateDocument = async (req, res) => {
   const usuarioId = req.user.usuarioID;
 
   try {
-    const { titulo, descripcion, tipoDocumentoId } = req.body;
     const { originalname, buffer } = req.file;
 
     // Obtener la URL actual del documento para guardar como versión anterior
@@ -338,7 +370,7 @@ exports.updateDocument = async (req, res) => {
     if (!currentDocResult.length) {
       return res.status(404).json({ message: "Documento no encontrado" });
     }
-    const currentUrl = currentDocResult.url;
+    const currentUrl = currentDocResult[0].url;
 
     // Subir el nuevo documento a S3
     const updatedFileUrl = await uploadDocumentToS3(originalname, buffer);
@@ -346,16 +378,13 @@ exports.updateDocument = async (req, res) => {
     // Actualizar el documento con la nueva URL
     const updateQuery = `
       UPDATE Documentos 
-      SET Titulo = $1, Descripcion = $2, URL = $3, FechaModificacion = NOW(), UsuarioID = $4, TipoDocumentoID = $5
-      WHERE DocumentoID = $6
+      SET  URL = $1, FechaCreacion = NOW(), UsuarioID = $2
+      WHERE DocumentoID = $3
       RETURNING *;
     `;
     const updateValues = [
-      titulo,
-      descripcion,
       updatedFileUrl,
       usuarioId,
-      tipoDocumentoId,
       documentId,
     ];
     const updatedResult = await db.query(updateQuery, updateValues);
@@ -395,7 +424,7 @@ exports.deleteVersion = async (req, res) => {
     if (!versionResult.length) {
       return res.status(404).json({ message: "Versión no encontrada" });
     }
-    const versionUrl = versionResult.url_s3;
+    const versionUrl = versionResult[0].url_s3;
 
     // Eliminar la versión de S3
     const s3Result = await deleteDocumentFromS3(versionUrl);

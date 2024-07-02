@@ -10,6 +10,7 @@ const {
   updateDocument,
   getDocumentTypes,
   shareDocument,
+  deleteNotification,
   getAuditLogs,
   getNotifications,
   deleteVersion,
@@ -294,6 +295,13 @@ router.get(
   inspectUser,
   authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getNotifications
+);
+
+router.delete('/notifications/:notificationId', 
+  authenticateToken,
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]), 
+  deleteNotification
 );
 
 
