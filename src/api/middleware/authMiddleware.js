@@ -1,10 +1,6 @@
 require('dotenv').config();
-
-const { JWT_SECRET} = process.env;
-
-
+const { JWT_SECRET } = process.env;
 const jwt = require('jsonwebtoken');
-
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'] || req.headers['Authorization'];
@@ -25,18 +21,27 @@ const authenticateToken = (req, res, next) => {
       }
     }
     req.user = user;
-    console.log('USel:', req.user);
+    console.log('Usuario:', req.user);
     next();
   });
 };
 
-const authorizeRole = (role) => {
+const authorizeRole = (roles) => {
   return (req, res, next) => {
-    console.log('Rol A:', req.user.userRole);
-    // Verificar si el usuario tiene el rol necesario
-    if (!req.user || req.user.userRole !== role) {
+    if (!req.user) {
+      console.error('Usuario no autenticado');
       return res.status(403).json({ message: 'No tienes permiso para acceder a este recurso' });
     }
+
+    console.log('Roles permitidos:', roles);
+    console.log('Rol del usuario:', req.user.userRole);
+
+    // Verificar si el usuario tiene uno de los roles necesarios
+    if (!roles.includes(req.user.userRole)) {
+      console.error('Rol no autorizado:', req.user.userRole);
+      return res.status(403).json({ message: 'No tienes permiso para acceder a este recurso' });
+    }
+    
     next();
   };
 };

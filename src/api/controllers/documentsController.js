@@ -24,7 +24,7 @@ exports.getNotifications = async (req, res) => {
       "SELECT * FROM Notificaciones WHERE UsuarioID = $1 ORDER BY FechaHora DESC";
     const notificationsResult = await db.query(notificationsQuery, [usuarioId]);
 
-    res.status(200).json(notificationsResult.rows);
+    res.status(200).json(notificationsResult);
   } catch (error) {
     console.error("Error al obtener las notificaciones:", error);
     res.status(500).json({ message: "Error del servidor" });
@@ -83,7 +83,7 @@ exports.shareDocument = async (req, res) => {
 };
 
 // Función para enviar notificaciones
-const sendNotification = async (io, userId, notification) => {
+const  sendNotification = async (io, userId, notification) => {
   const notificationQuery = `
     INSERT INTO Notificaciones (UsuarioID, Titulo, Mensaje, DocumentoID, FechaHora)
     VALUES ($1, $2, $3, $4, NOW());
@@ -229,11 +229,20 @@ exports.deleteDocument = async (req, res) => {
   try {
     console.log("Documento a eliminar:", documentUrl);
 
+    // Eliminar las entradas en DocumentosCompartidos
+    const deleteSharedDocsQuery = `
+      DELETE FROM DocumentosCompartidos
+      WHERE DocumentoID = (SELECT DocumentoID FROM Documentos WHERE URL = $1);
+    `;
+    await db.query(deleteSharedDocsQuery, [documentUrl]);
+
+    // Eliminar el documento de S3
     const s3Result = await deleteDocumentFromS3(documentUrl);
     if (s3Result.error) {
       return res.status(404).json({ message: s3Result.error });
     }
 
+    // Eliminar el documento de la base de datos
     const deleteQuery = `
       DELETE FROM Documentos
       WHERE URL = $1

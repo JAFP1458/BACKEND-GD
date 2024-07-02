@@ -15,6 +15,8 @@ const {
   deleteVersion,
 } = require("../api/controllers/documentsController");
 
+
+
 /**
  * @swagger
  * tags:
@@ -251,6 +253,12 @@ const {
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// Middleware para inspeccionar req.user
+const inspectUser = (req, res, next) => {
+  console.log('Usuario autenticado:', req.user);
+  next();
+};
+
 // Ruta para agregar un nuevo documento
 router.post(
   "/",
@@ -279,13 +287,15 @@ router.delete(
   deleteDocument
 ); // Solo los Operadores pueden eliminar documentos
 
-// Ruta para obtener notificaciones
+// Ruta para obtener notificaciones con middleware de inspección
 router.get(
   "/notifications",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getNotifications
 );
+
 
 // Ruta para obtener un documento por su ID
 router.get(
@@ -308,7 +318,8 @@ router.put(
 router.post(
   "/share",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   shareDocument
 ); // Los Operadores pueden compartir documentos
 
