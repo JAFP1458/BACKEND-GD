@@ -11,6 +11,7 @@ const {
   getDocumentTypes,
   shareDocument,
   deleteNotification,
+  downloadVersion,
   getAuditLogs,
   getNotifications,
   deleteVersion,
@@ -275,6 +276,14 @@ router.post(
   authenticateToken,
   authorizeRole("Operador"),
   downloadDocument
+); // Tanto Visualizadores como Operadores pueden descargar documentos
+
+// Ruta para obtener (descargar) un documento
+router.post(
+  "/descargarversion",
+  authenticateToken,
+  authorizeRole("Operador"),
+  downloadVersion
 ); // Tanto Visualizadores como Operadores pueden descargar documentos
 
 // Ruta para obtener la lista de documentos

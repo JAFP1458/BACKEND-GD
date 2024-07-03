@@ -6,12 +6,12 @@ const {
 const db = require("../../config/db");
 
 // Función para registrar una acción en la auditoría
-const registrarAccion = async (usuarioId, accion, detalles) => {
+const registrarAccion = async (usuarioId, documentoId, accion, detalles) => {
   const query = `
-    INSERT INTO RegistrosAuditoria (UsuarioID, Accion, Detalles, FechaHora)
-    VALUES ($1, $2, $3, NOW());
+    INSERT INTO RegistrosAuditoria (UsuarioID, DocumentoID, Accion, Detalles, FechaHora)
+    VALUES ($1, $2, $3, $4, NOW());
   `;
-  const values = [usuarioId, accion, detalles];
+  const values = [usuarioId, documentoId, accion, detalles];
   await db.query(query, values);
 };
 
@@ -44,7 +44,7 @@ exports.deleteNotification = async (req, res) => {
     `;
     const result = await db.query(deleteQuery, [notificationId, usuarioId]);
 
-    if (result.rowCount === 0) {
+    if (!result.length) {
       return res.status(404).json({ message: "Notificación no encontrada" });
     }
 
@@ -54,7 +54,6 @@ exports.deleteNotification = async (req, res) => {
     res.status(500).json({ message: "Error del servidor" });
   }
 };
-
 
 // Controlador para compartir un documento
 exports.shareDocument = async (req, res) => {
@@ -66,9 +65,14 @@ exports.shareDocument = async (req, res) => {
     const documentQuery = "SELECT * FROM Documentos WHERE DocumentoID = $1";
     const documentResult = await db.query(documentQuery, [documentId]);
 
-    if (documentResult.length === 0) {
+    if (!documentResult.length) {
       return res.status(404).json({ message: "Documento no encontrado" });
     }
+
+    // Obtener el correo del remitente
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [senderUserId]);
+    const senderEmail = userResult[0].correoelectronico;
 
     // Insertar el registro de compartir documento
     const shareQuery = `
@@ -86,20 +90,21 @@ exports.shareDocument = async (req, res) => {
     // Registrar la acción en la auditoría
     await registrarAccion(
       senderUserId,
+      documentId,
       "Compartir Documento",
-      `Documento ${documentId} compartido con el usuario ${recipientUserId} con permisos ${permissions}`
+      `Documento compartido con el usuario ${recipientUserId} con permisos ${permissions} por ${senderEmail} el ${new Date().toLocaleString()}`
     );
 
     // Enviar notificación al destinatario
     await sendNotification(req.io, recipientUserId, {
       title: "Nuevo Documento Compartido",
-      message: `El usuario ${senderUserId} ha compartido un documento contigo con los permisos ${permissions}.`,
+      message: `El usuario ${senderEmail} ha compartido un documento contigo con los permisos ${permissions}.`,
       documentId: documentId,
     });
 
     res.status(201).json({
       message: "Documento compartido correctamente",
-      shareResult: shareResult,
+      shareResult: shareResult[0],
     });
   } catch (error) {
     console.error("Error al compartir el documento:", error);
@@ -108,7 +113,7 @@ exports.shareDocument = async (req, res) => {
 };
 
 // Función para enviar notificaciones
-const  sendNotification = async (io, userId, notification) => {
+const sendNotification = async (io, userId, notification) => {
   const notificationQuery = `
     INSERT INTO Notificaciones (UsuarioID, Titulo, Mensaje, DocumentoID, FechaHora)
     VALUES ($1, $2, $3, $4, NOW());
@@ -138,16 +143,23 @@ exports.addDocument = async (req, res) => {
     const insertQuery = `
       INSERT INTO Documentos (Titulo, Descripcion, URL, FechaCreacion, UsuarioID, TipoDocumentoID)
       VALUES ($1, $2, $3, NOW(), $4, $5)
-      RETURNING *;
+      RETURNING DocumentoID;
     `;
 
     const values = [titulo, descripcion, fileUrl, usuarioId, tipoDocumentoId];
     const result = await db.query(insertQuery, values);
+    const documentId = result[0].documentoid;
+
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
 
     await registrarAccion(
       usuarioId,
+      documentId,
       "Agregar Documento",
-      `Documento ${result.documentoid} agregado por el usuario ${usuarioId}`
+      `Documento agregado por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
     res
@@ -162,10 +174,22 @@ exports.addDocument = async (req, res) => {
 // Controlador para obtener (descargar) un documento
 exports.downloadDocument = async (req, res) => {
   const { documentUrl } = req.body;
-  const usuarioId = req.user.usuarioID; // Asumiendo que el usuario está autenticado y su ID está disponible
+  const usuarioId = req.user.usuarioID;
 
   try {
+    const documentQuery = "SELECT DocumentoID FROM Documentos WHERE URL = $1";
+    const documentResult = await db.query(documentQuery, [documentUrl]);
+
+    
+
+    const documentId = documentResult[0].documentoid;
+
     const documentData = await downloadDocumentFromS3(documentUrl);
+
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
 
     // Registra la descarga en la base de datos
     await db.query(
@@ -176,8 +200,9 @@ exports.downloadDocument = async (req, res) => {
     // Registrar la acción en la auditoría
     await registrarAccion(
       usuarioId,
+      documentId,
       "Descargar Documento",
-      `Documento con URL ${documentUrl} descargado por el usuario ${usuarioId}`
+      `Documento descargado por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
     // Establece los encabezados de respuesta y envía el documento
@@ -192,6 +217,56 @@ exports.downloadDocument = async (req, res) => {
     console.log("Descarga exitosa");
   } catch (error) {
     console.error("Error al obtener el documento:", error);
+    if (error.message === "File not found") {
+      res.status(404).json({ message: error.message });
+    } else {
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+};
+
+// Controlador para descargar una versión anterior
+exports.downloadVersion = async (req, res) => {
+  const { versionUrl } = req.body;
+  const usuarioId = req.user.usuarioID;
+
+  try {
+    const versionQuery = "SELECT DocumentoID FROM VersionesDocumentos WHERE URL_S3 = $1";
+    const versionResult = await db.query(versionQuery, [versionUrl]);
+
+    if (versionResult.length === 0) {
+      return res.status(404).json({ message: "Versión no encontrada" });
+    }
+
+    const documentId = versionResult[0].documentoid;
+
+    const versionData = await downloadDocumentFromS3(versionUrl);
+
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
+
+    // Registrar la acción en la auditoría
+    await registrarAccion(
+      usuarioId,
+      documentId,
+      "Descargar Versión",
+      `Versión descargada por ${userEmail} el ${new Date().toLocaleString()}`
+    );
+
+    // Establece los encabezados de respuesta y envía la versión del documento
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${decodeURIComponent(
+        versionUrl.split("/").pop()
+      )}"`
+    );
+    res.setHeader("Content-Type", versionData.contentType);
+    res.send(versionData.data);
+    console.log("Descarga de versión exitosa");
+  } catch (error) {
+    console.error("Error al obtener la versión del documento:", error);
     if (error.message === "File not found") {
       res.status(404).json({ message: error.message });
     } else {
@@ -254,19 +329,33 @@ exports.deleteDocument = async (req, res) => {
   try {
     console.log("Documento a eliminar:", documentUrl);
 
+    // Obtener el ID del documento
+    const documentQuery = "SELECT DocumentoID FROM Documentos WHERE URL = $1";
+    const documentResult = await db.query(documentQuery, [documentUrl]);
+    if (!documentResult.length) {
+      return res
+        .status(404)
+        .json({ message: "Documento no encontrado en la base de datos" });
+    }
+    const documentId = documentResult[0].documentoid;
+
+    // Eliminar las versiones del documento
+    const deleteVersionsQuery = `
+      DELETE FROM VersionesDocumentos WHERE DocumentoID = $1;
+    `;
+    await db.query(deleteVersionsQuery, [documentId]);
+
     // Eliminar las notificaciones relacionadas con el documento
     const deleteNotificationsQuery = `
-      DELETE FROM Notificaciones
-      WHERE DocumentoID = (SELECT DocumentoID FROM Documentos WHERE URL = $1);
+      DELETE FROM Notificaciones WHERE DocumentoID = $1;
     `;
-    await db.query(deleteNotificationsQuery, [documentUrl]);
+    await db.query(deleteNotificationsQuery, [documentId]);
 
     // Eliminar las entradas en DocumentosCompartidos
     const deleteSharedDocsQuery = `
-      DELETE FROM DocumentosCompartidos
-      WHERE DocumentoID = (SELECT DocumentoID FROM Documentos WHERE URL = $1);
+      DELETE FROM DocumentosCompartidos WHERE DocumentoID = $1;
     `;
-    await db.query(deleteSharedDocsQuery, [documentUrl]);
+    await db.query(deleteSharedDocsQuery, [documentId]);
 
     // Eliminar el documento de S3
     const s3Result = await deleteDocumentFromS3(documentUrl);
@@ -276,22 +365,26 @@ exports.deleteDocument = async (req, res) => {
 
     // Eliminar el documento de la base de datos
     const deleteQuery = `
-      DELETE FROM Documentos
-      WHERE URL = $1
-      RETURNING *;
+      DELETE FROM Documentos WHERE URL = $1 RETURNING *;
     `;
     const result = await db.query(deleteQuery, [documentUrl]);
 
-    if (result.rowCount === 0) {
+    if (!result.length) {
       return res
         .status(404)
         .json({ message: "Documento no encontrado en la base de datos" });
     }
 
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
+
     await registrarAccion(
       usuarioId,
+      documentId,
       "Eliminar Documento",
-      `Documento con URL ${documentUrl} eliminado por el usuario ${usuarioId}`
+      `Documento con URL ${documentUrl} eliminado por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
     res.status(200).json({ message: "Documento eliminado correctamente" });
@@ -300,7 +393,6 @@ exports.deleteDocument = async (req, res) => {
     res.status(500).json({ message: "Error del servidor" });
   }
 };
-
 
 // Controlador para obtener un documento por su ID y sus versiones anteriores
 exports.getDocumentById = async (req, res) => {
@@ -344,6 +436,7 @@ exports.getDocumentById = async (req, res) => {
   }
 };
 
+// Controlador para obtener los tipos de documentos
 exports.getDocumentTypes = async (req, res) => {
   try {
     const result = await db.query(
@@ -378,15 +471,11 @@ exports.updateDocument = async (req, res) => {
     // Actualizar el documento con la nueva URL
     const updateQuery = `
       UPDATE Documentos 
-      SET  URL = $1, FechaCreacion = NOW(), UsuarioID = $2
+      SET URL = $1, FechaCreacion = NOW(), UsuarioID = $2
       WHERE DocumentoID = $3
       RETURNING *;
     `;
-    const updateValues = [
-      updatedFileUrl,
-      usuarioId,
-      documentId,
-    ];
+    const updateValues = [updatedFileUrl, usuarioId, documentId];
     const updatedResult = await db.query(updateQuery, updateValues);
 
     // Guardar la versión anterior en la tabla de versiones
@@ -396,15 +485,22 @@ exports.updateDocument = async (req, res) => {
     `;
     await db.query(insertVersionQuery, [documentId, currentUrl]);
 
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
+
     await registrarAccion(
       usuarioId,
+      documentId,
       "Actualizar Documento",
-      `Documento ${documentId} actualizado por el usuario ${usuarioId}`
+      `Documento actualizado por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
-    res
-      .status(200)
-      .json({ message: "Documento actualizado correctamente", updatedFileUrl });
+    res.status(200).json({
+      message: "Documento actualizado correctamente",
+      updatedFileUrl,
+    });
   } catch (error) {
     console.error("Error al actualizar el documento:", error);
     res.status(500).json({ message: "Error del servidor" });
@@ -419,12 +515,12 @@ exports.deleteVersion = async (req, res) => {
   try {
     // Obtener la URL de la versión para eliminarla de S3
     const versionQuery =
-      "SELECT URL_S3 FROM VersionesDocumentos WHERE VersionDocumentoID = $1";
+      "SELECT URL_S3, DocumentoID FROM VersionesDocumentos WHERE VersionDocumentoID = $1";
     const versionResult = await db.query(versionQuery, [versionId]);
     if (!versionResult.length) {
       return res.status(404).json({ message: "Versión no encontrada" });
     }
-    const versionUrl = versionResult[0].url_s3;
+    const { url_s3: versionUrl, documentoid: documentId } = versionResult[0];
 
     // Eliminar la versión de S3
     const s3Result = await deleteDocumentFromS3(versionUrl);
@@ -434,21 +530,25 @@ exports.deleteVersion = async (req, res) => {
 
     // Eliminar la versión de la base de datos
     const deleteVersionQuery = `
-      DELETE FROM VersionesDocumentos
-      WHERE VersionDocumentoID = $1
-      RETURNING *;
+      DELETE FROM VersionesDocumentos WHERE VersionDocumentoID = $1 RETURNING *;
     `;
     const deleteResult = await db.query(deleteVersionQuery, [versionId]);
-    if (deleteResult.rowCount === 0) {
+    if (!deleteResult.length) {
       return res
         .status(404)
         .json({ message: "Versión no encontrada en la base de datos" });
     }
 
+    // Obtener el correo del usuario
+    const userQuery = "SELECT CorreoElectronico FROM Usuarios WHERE UsuarioID = $1";
+    const userResult = await db.query(userQuery, [usuarioId]);
+    const userEmail = userResult[0].correoelectronico;
+
     await registrarAccion(
       usuarioId,
+      documentId,
       "Eliminar Versión",
-      `Versión ${versionId} eliminada por el usuario ${usuarioId}`
+      `Versión ${versionId} eliminada por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
     res.status(200).json({ message: "Versión eliminada correctamente" });
@@ -464,12 +564,12 @@ exports.getAuditLogs = async (req, res) => {
 
   try {
     const query = `
-      SELECT * 
-      FROM RegistrosAuditoria
-      WHERE Detalles LIKE $1
-      ORDER BY FechaHora DESC;
+      SELECT ra.FechaHora, ra.Detalles
+      FROM RegistrosAuditoria ra
+      WHERE ra.DocumentoID = $1
+      ORDER BY ra.FechaHora DESC;
     `;
-    const values = [`%Documento ${documentId}%`];
+    const values = [documentId];
 
     const result = await db.query(query, values);
 
