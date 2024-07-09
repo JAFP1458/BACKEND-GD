@@ -90,7 +90,8 @@ router.post(
 router.get(
   '/',
   authenticateToken,
-  authorizeRole("Gestor"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getAllUsers
 );
 
