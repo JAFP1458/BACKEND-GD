@@ -13,6 +13,7 @@ const {
   deleteNotification,
   downloadVersion,
   getAuditLogs,
+  getAreas,
   getNotifications,
   deleteVersion,
 } = require("../api/controllers/documentsController");
@@ -274,7 +275,8 @@ router.post(
 router.post(
   "/descargar",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   downloadDocument
 ); // Tanto Visualizadores como Operadores pueden descargar documentos
 
@@ -282,12 +284,14 @@ router.post(
 router.post(
   "/descargarversion",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   downloadVersion
 ); // Tanto Visualizadores como Operadores pueden descargar documentos
 
 // Ruta para obtener la lista de documentos
-router.get("/", authenticateToken, authorizeRole("Operador"), getDocuments); // Tanto Visualizadores como Operadores pueden obtener la lista de documentos
+router.get("/", authenticateToken, inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]), getDocuments); // Tanto Visualizadores como Operadores pueden obtener la lista de documentos
 
 // Ruta para eliminar un documento
 router.delete(
@@ -318,7 +322,8 @@ router.delete('/notifications/:notificationId',
 router.get(
   "/byId/:documentId",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getDocumentById
 ); // Tanto Visualizadores como Operadores pueden obtener un documento por su ID
 
@@ -344,15 +349,26 @@ router.post(
 router.get(
   "/types",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getDocumentTypes
+); // Tanto Visualizadores como Operadores pueden obtener los tipos de documentos
+
+// Ruta para obtener las areas
+router.get(
+  "/areas",
+  authenticateToken,
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
+  getAreas
 ); // Tanto Visualizadores como Operadores pueden obtener los tipos de documentos
 
 // Ruta para obtener el historial de acciones
 router.get(
   "/audit",
   authenticateToken,
-  authorizeRole("Operador"),
+  inspectUser,
+  authorizeRole(["Operador", "Gestor", "Visualizador"]),
   getAuditLogs
 ); // Los Operadores pueden obtener el historial de acciones
 

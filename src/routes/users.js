@@ -11,6 +11,7 @@ const {
   updateUser,
   deleteUser,
   getUserByEmail,
+  updateUserStatus,
   getUserDetails
 } = require('../api/controllers/authController');
 
@@ -214,5 +215,14 @@ router.delete(
   authorizeRole("Gestor"),
   deleteUser
 );
+
+router.put(
+  '/:usuarioID/status',
+  authenticateToken,
+  authorizeRole("Gestor"),
+  updateUserStatus
+);
+
+
 
 module.exports = router;

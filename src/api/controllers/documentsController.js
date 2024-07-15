@@ -133,7 +133,7 @@ const sendNotification = async (io, userId, notification) => {
 // Controlador para agregar un nuevo documento
 exports.addDocument = async (req, res) => {
   try {
-    const { titulo, descripcion, usuarioId, tipoDocumentoId } = req.body;
+    const { titulo, descripcion, usuarioId, tipoDocumentoId, areaId } = req.body;
     const { originalname, buffer } = req.file;
 
     // Subir el documento a Amazon S3 y obtener la URL
@@ -141,12 +141,12 @@ exports.addDocument = async (req, res) => {
 
     // Guardar la URL del documento en PostgreSQL
     const insertQuery = `
-      INSERT INTO Documentos (Titulo, Descripcion, URL, FechaCreacion, UsuarioID, TipoDocumentoID)
-      VALUES ($1, $2, $3, NOW(), $4, $5)
+      INSERT INTO Documentos (Titulo, Descripcion, URL, FechaCreacion, UsuarioID, TipoDocumentoID, AreaID)
+      VALUES ($1, $2, $3, NOW(), $4, $5, $6)
       RETURNING DocumentoID;
     `;
 
-    const values = [titulo, descripcion, fileUrl, usuarioId, tipoDocumentoId];
+    const values = [titulo, descripcion, fileUrl, usuarioId, tipoDocumentoId, areaId];
     const result = await db.query(insertQuery, values);
     const documentId = result[0].documentoid;
 
@@ -162,9 +162,7 @@ exports.addDocument = async (req, res) => {
       `Documento agregado por ${userEmail} el ${new Date().toLocaleString()}`
     );
 
-    res
-      .status(201)
-      .json({ message: "Documento añadido correctamente", fileUrl });
+    res.status(201).json({ message: "Documento añadido correctamente", fileUrl });
   } catch (error) {
     console.error("Error adding document:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -278,17 +276,18 @@ exports.downloadVersion = async (req, res) => {
 // Controlador para obtener la lista de documentos con búsqueda avanzada
 exports.getDocuments = async (req, res) => {
   try {
-    const { titulo, usuarioCorreo, tipoDocumentoId, fechaInicio, fechaFin } =
-      req.query;
+    const { titulo, usuarioCorreo, tipoDocumentoId, areaId, fechaInicio, fechaFin } = req.query;
 
     let query = `
       SELECT 
         d.*, 
         u.CorreoElectronico AS UsuarioCorreo,
-        td.Descripcion AS TipoDocumentoNombre
+        td.Descripcion AS TipoDocumentoNombre,
+        a.Descripcion AS AreaNombre
       FROM Documentos d
       JOIN Usuarios u ON d.UsuarioID = u.UsuarioID
       JOIN TiposDocumentos td ON d.TipoDocumentoID = td.TipoDocumentoID
+      JOIN Areas a ON d.AreaID = a.AreaID
       WHERE 1=1
     `;
     const values = [];
@@ -305,21 +304,24 @@ exports.getDocuments = async (req, res) => {
       query += ` AND d.TipoDocumentoID = $${values.length + 1}`;
       values.push(tipoDocumentoId);
     }
+    if (areaId) {
+      query += ` AND d.AreaID = $${values.length + 1}`;
+      values.push(areaId);
+    }
     if (fechaInicio && fechaFin) {
-      query += ` AND d.FechaCreacion BETWEEN $${values.length + 1} AND $${
-        values.length + 2
-      }`;
+      query += ` AND d.FechaCreacion BETWEEN $${values.length + 1} AND $${values.length + 2}`;
       values.push(fechaInicio, fechaFin);
     }
 
     const result = await db.query(query, values);
 
-    res.status(200).json(result);
+    res.status(200).json(result); // Asegúrate de devolver las filas
   } catch (error) {
     console.error("Error fetching documents:", error);
     res.status(500).json({ message: "Error fetching documents" });
   }
 };
+
 
 // Controlador para eliminar un documento
 exports.deleteDocument = async (req, res) => {
@@ -446,6 +448,19 @@ exports.getDocumentTypes = async (req, res) => {
   } catch (error) {
     console.error("Error fetching document types:", error);
     res.status(500).json({ message: "Error fetching document types" });
+  }
+};
+
+// Controlador para obtener las áreas
+exports.getAreas = async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT AreaID, Descripcion FROM Areas"
+    );
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching areas:", error);
+    res.status(500).json({ message: "Error fetching areas" });
   }
 };
 

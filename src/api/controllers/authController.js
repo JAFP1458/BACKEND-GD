@@ -30,13 +30,13 @@ exports.registerUser = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(contraseña, salt);
 
-        // Crear el nuevo usuario
+        // Crear el nuevo usuario con estado activo
         const insertQuery = `
-            INSERT INTO Usuarios (Nombre, CorreoElectronico, Contraseña)
-            VALUES ($1, $2, $3)
+            INSERT INTO Usuarios (Nombre, CorreoElectronico, Contraseña, Estado)
+            VALUES ($1, $2, $3, $4)
             RETURNING UsuarioID;
         `;
-        const values = [nombre, correoElectronico, hashedPassword];
+        const values = [nombre, correoElectronico, hashedPassword, true];
         const result = await db.query(insertQuery, values);
 
         const usuarioID = result[0].usuarioid;
@@ -57,8 +57,30 @@ exports.registerUser = async (req, res) => {
     }
 };
 
-// Controlador para iniciar sesión
+// Controlador para activar/desactivar usuario
+exports.updateUserStatus = async (req, res) => {
+    const { usuarioID } = req.params;
+    const { estado } = req.body;
+  
+    try {
+      // Verificar si el usuario existe
+      const usuario = await db.query('SELECT * FROM Usuarios WHERE UsuarioID = $1', [usuarioID]);
+      if (usuario.length === 0) {
+        return res.status(404).json({ message: 'El usuario no existe' });
+      }
+  
+      // Actualizar el estado del usuario
+      await db.query('UPDATE Usuarios SET Estado = $1 WHERE UsuarioID = $2', [estado, usuarioID]);
+  
+      res.status(200).json({ message: 'Estado del usuario actualizado correctamente' });
+    } catch (error) {
+      console.error('Error al actualizar el estado del usuario:', error);
+      res.status(500).json({ message: 'Error del servidor' });
+    }
+  };
+  
 
+// Controlador para iniciar sesión
 exports.loginUser = async (req, res) => {
     // Validación de los datos de entrada
     const errors = validationResult(req);
@@ -73,9 +95,7 @@ exports.loginUser = async (req, res) => {
         const sanitizedEmail = sanitize(correoElectronico);
 
         // Verificar si el usuario existe
-        console.log('Correo electrónico:', sanitizedEmail); // Agrega este registro
         const usuarioResult = await db.query('SELECT * FROM Usuarios WHERE CorreoElectronico = $1', [sanitizedEmail]);
-        console.log('Correo electrónico:', sanitizedEmail);
 
         if (!usuarioResult || !usuarioResult.length || !usuarioResult[0]) {
             return res.status(400).json({ message: 'Credenciales inválidas' });
@@ -83,16 +103,18 @@ exports.loginUser = async (req, res) => {
 
         const usuario = usuarioResult[0];
 
+        // Verificar si el usuario está activo
+        if (!usuario.estado) {
+            return res.status(403).json({ message: 'El usuario está desactivado' });
+        }
+
         // Verificar si la contraseña del usuario está definida
         if (!usuario.contraseña) {
             return res.status(400).json({ message: 'La contraseña del usuario no está definida' });
         }
-        console.log('Contrasena:', contraseña); 
-        console.log('Contrasena:', usuario.contraseña); 
 
         // Verificar la contraseña
-        const isMatch = await bcrypt.compare(contraseña, usuario.contraseña); 
-        console.log('Contrasena:', isMatch);
+        const isMatch = await bcrypt.compare(contraseña, usuario.contraseña);
 
         if (!isMatch) {
             return res.status(400).json({ message: 'Credenciales inválidas' });
@@ -112,7 +134,6 @@ exports.loginUser = async (req, res) => {
         }
 
         const role = roleResult[0];
-        console.log('Rol:', role.nombrerol);
 
         req.user = {
             id: usuario.usuarioid,
