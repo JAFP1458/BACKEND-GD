@@ -1,4 +1,5 @@
 require('reflect-metadata');
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors'); // Importa el middleware de cors
 const swaggerUi = require('swagger-ui-express');
@@ -10,16 +11,18 @@ const login = require('./src/routes/login.js');
 const roles = require('./src/routes/roles.js');
 const users = require('./src/routes/users.js');
 
+const { FRONTEND_URL , PORT } = process.env;
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // Permitir el acceso desde tu frontend
+    origin: FRONTEND_URL || "http://localhost:3000", // Permitir el acceso desde tu frontend
     methods: ["GET", "POST"],
   },
 });
 
-const port = "https://api-gd-senescyt-09b56187292c.herokuapp.com" || 5000;
+const port = PORT || 5000; // Usa el puerto proporcionado por Heroku o 5000 como respaldo
 
 // Middleware para habilitar CORS
 app.use(cors()); // Agrega esta línea
@@ -78,7 +81,7 @@ io.on('connection', (socket) => {
 async function iniciarServidor() {
   try {
     server.listen(port, () => {
-      console.log(`Servidor ejecutándose en http://localhost:${port}`);
+      console.log(`Servidor ejecutándose en el puerto ${port}`);
     });
   } catch (error) {
     console.error('Error al iniciar el servidor:', error);
