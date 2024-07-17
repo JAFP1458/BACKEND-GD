@@ -19,7 +19,7 @@ const io = new Server(server, {
   },
 });
 
-const port = 5000;
+const port = "https://api-gd-senescyt-09b56187292c.herokuapp.com" || 5000;
 
 // Middleware para habilitar CORS
 app.use(cors()); // Agrega esta línea
