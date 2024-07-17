@@ -2,15 +2,14 @@ require('dotenv').config();
 
 const { Client } = require('pg');
 
-const { DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_NAME } = process.env;
+const { DATABASE_URL } = process.env;
 
 async function connectToDb() {
   const client = new Client({
-    host: DB_HOST,
-    port: DB_PORT,
-    user: DB_USER,
-    password: DB_PASS,
-    database: DB_NAME,
+    connectionString: DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false
+    }
   });
   await client.connect();
   return client;
@@ -31,4 +30,3 @@ async function query(text, params) {
 module.exports = {
   query,
 };
-
